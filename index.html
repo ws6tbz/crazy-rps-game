@@ -376,6 +376,8 @@
         swapLock: false,        // 本回合是否禁止换牌（上一回合换过牌则 true）
         _nextSwapLock: false,   // 结算后传递给下一回合的换牌限制
         countdownLeft: 15,
+        countdownRounds: 0,     // 已消耗倒计时的回合数（玩家决斗/换牌、电脑决斗均含玩家倒计时）
+        lastCompAction: null,   // 电脑上一回合的行动：'duel' 或 'swap'
         stats: { wins: 0, losses: 0, draws: 0 },
         pHistory: [],
         log: []
@@ -383,7 +385,7 @@
     }
 
     /* ================= 对战流程 ================= */
-    var VERSION = 'v1.4.2';
+    var VERSION = 'v1.4.6';
     function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 
     function startGame() {
@@ -410,7 +412,7 @@
             later(function () { aiTurn(gid); }, 1100);
           } else {
             setMsg('你获得先手！选择「决斗」或「换牌」');
-            startCountdown(15);
+            startCountdown(countdownSeconds());
           }
         }, 1000);
       }, 1600);
@@ -420,6 +422,10 @@
       // 应用上一回合的换牌限制：上一回合换过牌，则本回合禁止换牌
       G.swapLock = !!G._nextSwapLock;
       G._nextSwapLock = false;
+      // 倒计时递减：仅统计"出现了玩家倒计时"的回合——
+      // 玩家回合（无论决斗/换牌）必有倒计时；电脑回合只有发起决斗（玩家迎战）才有倒计时；电脑换牌不克扣。
+      var consumed = (G.turn === 'player') || (G.lastCompAction === 'duel');
+      if (consumed) G.countdownRounds++;
       G.turn = G.turn === 'player' ? 'computer' : 'player';
       checkFinalTurn();
       if (G.phase === 'over') return;
@@ -435,7 +441,7 @@
         var lockTip = G.swapLock ? '（上回合已换牌，本回合只能决斗）' : '';
         setMsg(tip + '轮到你了！选择「决斗」或「换牌」' + lockTip);
         SFX.turn(); // 轮到你提示音
-        startCountdown(15);
+        startCountdown(countdownSeconds());
       }
     }
 
@@ -551,6 +557,7 @@
 
     async function endGame(result) {
       G.phase = 'over';
+      G.lastResult = result; // 记录对局结果，供关闭规则页后恢复结束浮层
       if (result === 'win') { G.stats.wins++; addLog('🎉 你赢了！'); }
       else if (result === 'lose') { G.stats.losses++; addLog('💀 你输了…'); }
       else { G.stats.draws++; addLog('🤝 平局！'); }
@@ -712,13 +719,14 @@
       await delay(900);
       if (!isCurrent(gid) || G.phase !== 'idle' || G.turn !== 'computer') return;
       var action = smartDecideAction();
+      G.lastCompAction = action; // 记录电脑动作：'duel'（玩家迎战有倒计时）或 'swap'（无玩家倒计时）
       if (action === 'duel') {
         G.pendingC = smartPickDuelCard();
         G.phase = 'duelPick';
         addLog('电脑发起决斗！请选一张牌迎战');
         setMsg('⚔️ 电脑向你发起决斗！请选择一张牌迎战');
         renderAll();
-        startCountdown(15); // 迎战选牌同样限时 15 秒
+        startCountdown(countdownSeconds()); // 迎战选牌同样限时（随回合递减）
       } else {
         addLog('电脑发起换牌…');
         setMsg('电脑发起换牌…');
@@ -1010,6 +1018,11 @@
         renderCountdown();
       }, 1000);
     }
+    // 每回合倒计时递减：第 1 个含玩家倒计时的回合 15 秒，之后每经历一个这样的回合 -1 秒，最低 10 秒；重开游戏重置。
+    // 玩家决斗 / 玩家换牌 / 电脑决斗（玩家迎战）都会克扣；电脑换牌（无玩家倒计时）不克扣。
+    function countdownSeconds() {
+      return Math.max(10, 15 - G.countdownRounds);
+    }
     function startCountdown(seconds) {
       clearCountdown();
       G.countdownLeft = seconds;
@@ -1031,12 +1044,12 @@
       if (G.phase === 'idle') {
         if (G.turn !== 'player') return;
         G.phase = 'duelPick';
-        addLog('⏱ 15 秒时间到！自动发起决斗并随机出牌。');
+        addLog('⏱ 时间到！自动发起决斗并随机出牌。');
       } else if (G.phase === 'duelPick') {
-        addLog('⏱ 15 秒时间到！自动随机出牌。');
+        addLog('⏱ 时间到！自动随机出牌。');
       } else if (G.phase === 'swapPick') {
         if (G.turn !== 'player') return;
-        addLog('⏱ 15 秒时间到！自动随机选牌换牌。');
+        addLog('⏱ 时间到！自动随机选牌换牌。');
       } else {
         return;
       }
@@ -1049,13 +1062,13 @@
     // 规则正文（开场介绍与规则弹窗共用）
     var RULES_HTML =
       '<ul>' +
-      '<li>双方各有 <b>7 点 HP</b>；全场共 <b>15 张牌</b>（单个石头×3、两个石头×2、单个剪刀×3、两个剪刀×2、单个布×3、两个布×2）。</li>' +
+      '<li>双方各有 <b>7 点 HP</b>；全场共 <b>15 张牌</b>（单倍图案牌，<b>每种3张</b>；双倍图案牌，<b>每种2张</b>）。</li>' +
       '<li>开局随机一张牌放入<b>底牌区</b>，双方各分 7 张，互不可见；抛硬币决定先手。</li>' +
       '<li><b>决斗</b>：双方各出一张牌，按照 （单个/两个）石头 > （单个/两个）剪刀 > （单个/两个）布 > （单个/两个）石头...判定回合胜负。失败方损失 HP = <b>双方牌面图案数量之积</b>；同类牌为平局，均不损失 HP。出过的牌进入弃牌区（明牌）。</li>' +
       '<li><b>换牌</b>：选一张自己的牌，与对手手牌中<b>随机</b>的一张交换（只能看到卡背）。</li>' +
       '<li><b>最终回合</b>：双方都只剩一张牌且 HP＞0 时触发，决斗伤害<b>翻倍</b>，换牌只能与<b>底牌</b>交换。</li>' +
       '<li><b>换牌限制</b>：不能连续两回合换牌——若上一回合发生了换牌（含最终回合与底牌交换），本回合双方都只能发起「决斗」。</li>' +
-      '<li><b>思考时间</b>：你的每个回合有 <b>15 秒</b> 操作时间，超时系统将自动随机完成当前操作。</li>' +
+      '<li><b>思考时间</b>：你的每个回合限时操作，倒计时从 <b>15 秒</b> 起逐回合递减 1 秒，最低 <b>10 秒</b>；重开游戏后重置。超时系统将自动随机完成当前操作。</li>' +
       '<li><b>胜利条件</b>：一回合结束后，任何一方 HP 归零即本轮游戏告负。</li>' +
       '</ul>';
 
@@ -1095,7 +1108,10 @@
         '<div class="ov-sub">' + m[1] + '</div>' +
         '<div class="ov-hp">你的剩余 HP：' + G.player.hp + '　电脑剩余 HP：' + G.computer.hp + '</div>' +
         '<div class="ov-stats">总战绩：胜 ' + G.stats.wins + ' · 负 ' + G.stats.losses + ' · 平 ' + G.stats.draws + '</div>' +
-        '<button class="btn primary big" onclick="restart()">再来一局</button></div>';
+        '<div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+        '<button class="btn primary big" onclick="restart()">再来一局</button>' +
+        '<button class="btn big" onclick="showHelp()" style="background:linear-gradient(180deg,#3f9ed8,#2b6fa8)">阅读规则</button>' +
+        '</div></div>';
       $id('overlay').classList.remove('hidden');
     }
     function showHelp() {
@@ -1112,8 +1128,9 @@
     }
     function closeHelp() {
       $id('overlay').classList.add('hidden');
-      if (!G) { showIntro(); return; } // 尚未开始游戏，回到开场介绍
-      resumeCountdown(); // 关闭规则页后恢复倒计时
+      if (!G) { showIntro(); return; }                            // 尚未开始游戏，回到开场介绍
+      if (G.phase === 'over') { showOverlay(G.lastResult); return; } // 对局已结束：关闭规则后回到结束浮层
+      resumeCountdown();                                           // 对局进行中：恢复倒计时
     }
 
     /* 打开外部链接（邮箱）：平台内走 SDK，浏览器直开走默认 mailto */
