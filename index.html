@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>惊险石头剪子布 · 卡片对战</title>
+  <style>
+    :root {
+      --felt1: #1d5e40;
+      --felt2: #0e3a26;
+      --gold: #e8c36a;
+      --panel: rgba(10, 26, 17, 0.72);
+      --panel-border: rgba(232, 195, 106, 0.35);
+      --text: #f2f0e6;
+      --muted: #b9c9bd;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      background: radial-gradient(130% 130% at 50% 0%, var(--felt1), var(--felt2) 72%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 6px 8px;
+      overflow-y: auto;
+    }
+    .wrap { max-width: 660px; margin: 0 auto; }
+
+    /* ---------- 顶部 ---------- */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .title { font-size: 17px; font-weight: 900; letter-spacing: 1px; }
+    .title .sub { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 8px; }
+    .hdr-right { display: flex; align-items: center; gap: 8px; }
+    .stats { font-size: 12px; color: var(--muted); }
+    .ver {
+      font-size: 11px; color: rgba(255,255,255,.55); letter-spacing: .5px;
+      border: 1px solid rgba(255,255,255,.2); border-radius: 6px; padding: 2px 7px;
+      background: rgba(255,255,255,.06);
+    }
+    .timer { display: none; }
+    .big-timer {
+      display: block; text-align: center; font-size: 46px; font-weight: 900; line-height: 1;
+      color: var(--gold); letter-spacing: 3px; margin: 0 0 3px;
+      text-shadow: 0 0 22px rgba(232,195,106,.5), 0 4px 8px rgba(0,0,0,.55);
+      transition: color .2s;
+    }
+    .big-timer.hidden { display: none; }
+    .big-timer.urgent {
+      color: #ff5f5f;
+      text-shadow: 0 0 26px rgba(255,95,95,.7), 0 4px 8px rgba(0,0,0,.55);
+      animation: bigPulse .55s ease-in-out infinite alternate;
+    }
+    @keyframes bigPulse {
+      from { transform: scale(1); opacity: .82; }
+      to { transform: scale(1.16); opacity: 1; }
+    }
+    .mini {
+      border: 1px solid var(--panel-border); background: rgba(255,255,255,.08);
+      color: var(--text); border-radius: 8px; padding: 5px 10px; font-size: 12px;
+      cursor: pointer; font-family: inherit; transition: background .15s;
+    }
+    .mini:hover { background: rgba(255,255,255,.18); }
+
+    /* ---------- 区域 ---------- */
+    .zone {
+      background: var(--panel); border: 1px solid var(--panel-border);
+      border-radius: 14px; padding: 7px 10px; margin-bottom: 6px;
+    }
+    .zone.active { box-shadow: 0 0 0 2px var(--gold), 0 0 18px rgba(232,195,106,.3); }
+    .zone-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+    .zone-head .name { font-weight: 800; font-size: 13px; letter-spacing: 1px; }
+    .zone.active .name::after { content: ' · 行动中'; color: var(--gold); font-size: 11px; font-weight: 600; }
+    .hp { display: inline-flex; align-items: center; gap: 6px; position: relative; }
+    .heart { color: #ff5f6d; text-shadow: 0 1px 2px rgba(0,0,0,.4); font-size: 13px; }
+    .heart.lost { color: rgba(255,255,255,.16); text-shadow: none; }
+    .hp b { font-size: 12px; }
+    .hp-flash { animation: hitFlash .55s; }
+    @keyframes hitFlash { 0% { transform: scale(1.12); filter: brightness(1.8); } 100% { transform: scale(1); filter: brightness(1); } }
+    .dmg-float {
+      position: absolute; right: -10px; top: -16px; color: #ff9d6b; font-weight: 900;
+      font-size: 19px; animation: floatUp .95s ease-out forwards; pointer-events: none; z-index: 5;
+    }
+    @keyframes floatUp { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-28px); } }
+
+    /* ---------- 手牌 ---------- */
+    .hand { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; min-height: 56px; }
+    .card {
+      width: clamp(46px, 10.5vw, 60px); background: #fffdf4; border-radius: 10px;
+      padding: 4px; display: flex; flex-direction: column; gap: 3px; flex-shrink: 0;
+      box-shadow: 0 3px 8px rgba(0,0,0,.45); outline: 2px solid transparent;
+      transition: transform .15s ease, box-shadow .15s ease, outline-color .15s;
+    }
+    .card img { width: 100%; height: auto; display: block; border-radius: 6px; }
+    .card-name { font-size: 10px; text-align: center; color: #4a3b16; font-weight: 700; line-height: 1.15; }
+    .card.back { background: transparent; padding: 2px; }
+    .card.back img { border-radius: 8px; }
+    .card.pickable { cursor: pointer; }
+    .card.pickable:hover {
+      transform: translateY(-6px) scale(1.05); box-shadow: 0 8px 18px rgba(0,0,0,.55);
+      outline-color: var(--gold);
+    }
+    .card.pickable:active { transform: translateY(-3px) scale(1.02); }
+
+    /* ---------- 桌面区 ---------- */
+    .table-row { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; margin-bottom: 6px; }
+    .pile { text-align: center; }
+    .pile-label { font-size: 12px; color: var(--muted); margin-bottom: 3px; letter-spacing: 1px; }
+    .pile-card { width: 46px; margin: 0 auto; }
+    .pile-card:empty { min-height: 58px; }
+    .pile-card img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,.4); }
+    .pile-card.empty { height: 56px; border: 2px dashed rgba(255,255,255,.22); border-radius: 8px; }
+    .discard-box { min-width: 0; }
+    .discard {
+      display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 44px;
+      background: rgba(0,0,0,.22); border-radius: 10px; padding: 5px;
+    }
+    .discard-item { position: relative; width: 42px; flex-shrink: 0; }
+    .discard-item img { width: 100%; height: auto; border-radius: 6px; opacity: .93; }
+    .discard-item .badge {
+      position: absolute; top: -6px; right: -6px; background: var(--gold); color: #3a2c08;
+      border-radius: 9px; font-size: 11px; font-weight: 800; padding: 0 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+    .empty-hint { color: var(--muted); font-size: 12px; }
+
+    /* ---------- 战斗区 ---------- */
+    .battle { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 3px 0; min-height: 92px; }
+    .slot { text-align: center; width: 100px; }
+    .slot-label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 3px; }
+    .slot-card {
+      min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      border: 2px dashed rgba(255,255,255,.2); border-radius: 12px; padding: 4px;
+    }
+    .slot-card img { width: 100%; max-width: 80px; height: auto; border-radius: 8px; }
+    .slot-name { font-size: 11px; margin-top: 2px; color: var(--text); line-height: 1.2; }
+    .slot-card.reveal { border-style: solid; border-color: var(--gold); animation: revealIn .45s ease-out; }
+    .vs { font-weight: 900; font-size: 17px; color: var(--gold); text-shadow: 0 2px 4px rgba(0,0,0,.5); }
+    @keyframes revealIn { from { transform: translateY(16px) scale(.6); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+
+    .battle-msg { text-align: center; font-size: 16px; font-weight: 800; min-height: 24px; margin: 4px 0 8px; }
+    .battle-msg.win { color: #7ee87e; }
+    .battle-msg.lose { color: #ff8a8a; }
+    .battle-msg.draw { color: var(--gold); }
+    .battle-msg.swap { color: #7fd4ff; }
+
+    .status {
+      text-align: center; font-size: 13px; line-height: 1.4; background: rgba(0,0,0,.25);
+      border-radius: 10px; padding: 5px 8px; margin-bottom: 6px; min-height: 30px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .controls { display: flex; gap: 14px; justify-content: center; }
+    .btn {
+      border: none; cursor: pointer; font-family: inherit; font-weight: 800; font-size: 15px;
+      letter-spacing: 2px; padding: 8px 18px; border-radius: 12px; color: #fff; min-height: 40px;
+      box-shadow: 0 4px 10px rgba(0,0,0,.35);
+      transition: transform .12s, filter .12s, opacity .2s;
+    }
+    .btn:active:not(:disabled) { transform: translateY(2px); }
+    .btn.duel { background: linear-gradient(180deg, #e85d4a, #c23a2e); }
+    .btn.swap { background: linear-gradient(180deg, #3f9ed8, #2b6fa8); }
+    .btn:disabled { opacity: .38; cursor: not-allowed; filter: grayscale(.6); }
+    .btn.primary { background: linear-gradient(180deg, #f0c75e, #d9a62e); color: #3a2c08; }
+    .btn.big { font-size: 16px; padding: 10px 30px; }
+
+    /* ---------- 对局记录 ---------- */
+    .log-zone { max-height: 96px; overflow-y: auto; }
+    .log { display: flex; flex-direction: column; gap: 3px; font-size: 12px; line-height: 1.45; }
+    .log-item { color: var(--muted); border-left: 3px solid var(--panel-border); padding-left: 8px; animation: fadeIn .3s; }
+    .log-item:first-child { color: var(--text); border-left-color: var(--gold); }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ---------- 浮层 ---------- */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(6,16,10,.62); z-index: 60;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+      backdrop-filter: blur(3px);
+    }
+    .overlay.hidden { display: none; }
+    .overlay-card {
+      background: linear-gradient(180deg, #173f2c, #0f2b1c); border: 2px solid var(--gold);
+      border-radius: 18px; padding: 26px 30px; text-align: center; max-width: 440px; width: 100%;
+      box-shadow: 0 18px 50px rgba(0,0,0,.55); animation: revealIn .4s ease-out;
+    }
+    .ov-title { font-size: 30px; font-weight: 900; margin-bottom: 6px; }
+    .ov-sub { color: var(--muted); margin-bottom: 12px; }
+    .ov-hp, .ov-stats { font-size: 14px; margin-bottom: 8px; }
+    .coin {
+      position: relative; width: 92px; height: 92px; margin: 0 auto 10px; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #f9dd85, #e8b93c 55%, #b8862b);
+      border: 4px solid #a06f1f;
+      box-shadow: 0 6px 18px rgba(0,0,0,.5), inset 0 -6px 12px rgba(120,80,0,.35);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; font-weight: 900; color: #7a5200; letter-spacing: 1px;
+      text-shadow: 0 1px 1px rgba(255,255,255,.5);
+      animation: coinSpin 1.1s ease-in-out infinite;
+    }
+    .coin::after {
+      content: ''; position: absolute; width: 62px; height: 62px;
+      border: 2px dashed rgba(122,82,0,.45); border-radius: 50%;
+    }
+    @keyframes coinSpin { 0%, 100% { transform: rotateY(0deg); } 50% { transform: rotateY(180deg); } }
+    .help-body { text-align: left; font-size: 13px; line-height: 1.7; color: var(--muted); }
+    .help-body b { color: var(--text); }
+    .help-body ul { margin: 4px 0 0; padding-left: 18px; }
+
+    /* ---------- 页脚署名 ---------- */
+    .credit {
+      text-align: center; font-size: 12px; color: var(--muted);
+      padding: 3px 0 8px; opacity: .9; letter-spacing: .3px;
+    }
+    .credit b { color: var(--text); font-weight: 700; }
+    .credit .mail { color: var(--gold); text-decoration: none; }
+    .credit .mail:hover { text-decoration: underline; }
+
+    @media (max-width: 480px) {
+      .card { width: clamp(40px, 16vw, 52px); }
+      .slot { width: 84px; }
+      .btn { padding: 8px 14px; font-size: 14px; }
+      .big-timer { font-size: 40px; }
+      .log-zone { max-height: 72px; }
+      .table-row { grid-template-columns: auto 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">惊险石头剪子布<span class="sub">卡片对战</span></div>
+      <div class="hdr-right">
+        <span class="ver" id="verTag"></span>
+        <span class="stats" id="statsBar">胜 0 · 负 0 · 平 0</span>
+        <button class="mini" onclick="showHelp()">规则</button>
+        <button class="mini" onclick="toggleMute()" id="btnMute">🔊</button>
+        <button class="mini" onclick="restart()">重开</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- 电脑区 -->
+      <section class="zone" id="compZone">
+        <div class="zone-head">
+          <span class="name">🤖 电脑</span>
+          <span class="hp" id="computerHpBox">
+            <span id="computerHearts"></span><b id="computerHpNum"></b>
+          </span>
+        </div>
+        <div class="hand" id="computerHand"></div>
+      </section>
+
+      <!-- 桌面区 -->
+      <section class="zone">
+        <div class="table-row">
+          <div class="pile">
+            <div class="pile-label">底牌区</div>
+            <div class="pile-card" id="bottomPile"></div>
+          </div>
+          <div class="discard-box">
+            <div class="pile-label">弃牌区（明牌）</div>
+            <div class="discard" id="discard"></div>
+          </div>
+        </div>
+
+        <!-- 桌面大号倒计时：压迫感来源 -->
+        <div class="big-timer hidden" id="bigTimer"></div>
+
+        <div class="battle" id="battle">
+          <div class="slot">
+            <span class="slot-label">你</span>
+            <div class="slot-card" id="slot-player"></div>
+          </div>
+          <div class="vs" id="vs">VS</div>
+          <div class="slot">
+            <span class="slot-label">电脑</span>
+            <div class="slot-card" id="slot-computer"></div>
+          </div>
+        </div>
+        <div class="battle-msg" id="battleMsg"></div>
+
+        <div class="status" id="statusMsg">阅读规则后点击「开始游戏」</div>
+        <div class="controls">
+          <button class="btn duel" id="btnDuel" onclick="onDuelClick()">决斗</button>
+          <button class="btn swap" id="btnSwap" onclick="onSwapClick()">换牌</button>
+        </div>
+      </section>
+
+      <!-- 玩家区 -->
+      <section class="zone" id="playerZone">
+        <div class="zone-head">
+          <span class="name">🧑 你</span>
+          <span class="hp" id="playerHpBox">
+            <span id="playerHearts"></span><b id="playerHpNum"></b>
+          </span>
+        </div>
+        <div class="hand" id="playerHand"></div>
+      </section>
+
+      <!-- 对局记录 -->
+      <section class="zone log-zone">
+        <div class="pile-label">对局记录</div>
+        <div class="log" id="log"></div>
+      </section>
+    </main>
+
+    <footer class="credit">
+      <span>Made with ❤️ by <b>hezicola</b></span>
+      <span> · </span>
+      <a class="mail" href="mailto:hezicola@outlook.com" onclick="return openMail(event)">hezicola@outlook.com</a>
+    </footer>
+  </div>
+
+  <div class="overlay hidden" id="overlay"></div>
+
+  <script>
+    /* ================= 基础数据 ================= */
+    var TYPE_INFO = {
+      rock:     { name: '石头', img1: '素材/石头_1.png',  img2: '素材/石头_2.png'  },
+      scissors: { name: '剪刀', img1: '素材/剪刀_1.png',  img2: '素材/剪刀_2.png'  },
+      paper:    { name: '布',   img1: '素材/布_1.png',    img2: '素材/布_2.png'    }
+    };
+    var BACK_IMG = '素材/卡背.png';
+    var BEATS = { rock: 'scissors', scissors: 'paper', paper: 'rock' }; // key 克制 value
+    var STATS_FILE = '石头剪刀布.data.json';
+
+    function cardImg(c) { return c.count === 1 ? TYPE_INFO[c.type].img1 : TYPE_INFO[c.type].img2; }
+    function cardName(c) { return (c.count === 1 ? '单个' : '两个') + TYPE_INFO[c.type].name; }
+    function duelResult(a, b) {
+      if (a.type === b.type) return 'draw';
+      return BEATS[a.type] === b.type ? 'a' : 'b';
+    }
+
+    var uid = 0;
+    function buildDeck() {
+      var spec = [
+        ['rock',1],['rock',1],['rock',1],
+        ['rock',2],['rock',2],
+        ['scissors',1],['scissors',1],['scissors',1],
+        ['scissors',2],['scissors',2],
+        ['paper',1],['paper',1],['paper',1],
+        ['paper',2],['paper',2]
+      ];
+      return spec.map(function (s) { return { id: ++uid, type: s[0], count: s[1] }; });
+    }
+    function shuffle(arr) {
+      for (var i = arr.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+      }
+      return arr;
+    }
+
+    /* ================= 全局状态 ================= */
+    var G = null;
+    var GAME_ID = 0;
+    var timers = [];
+    function delay(ms) { return new Promise(function (res) { timers.push(setTimeout(res, ms)); }); }
+    function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+    function isCurrent(gid) { return gid === GAME_ID; }
+
+    function newGame() {
+      GAME_ID++;
+      clearTimers();
+      var deck = shuffle(buildDeck());
+      var bottom = deck.pop();
+      var pHand = deck.splice(0, 7);
+      var cHand = deck.splice(0, 7);
+      G = {
+        phase: 'coin', turn: null,
+        player:   { hp: 7, hand: pHand },
+        computer: { hp: 7, hand: cHand },
+        bottom: bottom, discard: [],
+        finalTurn: false, announcedFinal: false,
+        pendingC: null,
+        swapLock: false,        // 本回合是否禁止换牌（上一回合换过牌则 true）
+        _nextSwapLock: false,   // 结算后传递给下一回合的换牌限制
+        countdownLeft: 15,
+        stats: { wins: 0, losses: 0, draws: 0 },
+        pHistory: [],
+        log: []
+      };
+    }
+
+    /* ================= 对战流程 ================= */
+    var VERSION = 'v1.4.2';
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+
+    function startGame() {
+      newGame();
+      clearCountdown();
+      loadStats(); // 战绩异步加载，不阻塞开局
+      renderAll();
+      $id('bottomPile').innerHTML = '<img src="' + BACK_IMG + '" alt="底牌">'; // 进入游戏后才展示底牌卡背
+      showCoinOverlay();
+      SFX.coin(); // 抛硬币音效
+      var gid = GAME_ID; // 在 newGame() 之后捕获，确保 isCurrent 判定正确
+      later(function () {
+        if (!isCurrent(gid)) return;
+        G.turn = Math.random() < 0.5 ? 'player' : 'computer';
+        hideCoinOverlay(G.turn);
+        addLog('抛硬币：' + (G.turn === 'player' ? '你' : '电脑') + '获得先手。');
+        later(function () {
+          if (!isCurrent(gid)) return;
+          document.getElementById('overlay').classList.add('hidden');
+          G.phase = 'idle';
+          renderAll();
+          if (G.turn === 'computer') {
+            setMsg('电脑先手，正在思考…');
+            later(function () { aiTurn(gid); }, 1100);
+          } else {
+            setMsg('你获得先手！选择「决斗」或「换牌」');
+            startCountdown(15);
+          }
+        }, 1000);
+      }, 1600);
+    }
+
+    function nextTurn() {
+      // 应用上一回合的换牌限制：上一回合换过牌，则本回合禁止换牌
+      G.swapLock = !!G._nextSwapLock;
+      G._nextSwapLock = false;
+      G.turn = G.turn === 'player' ? 'computer' : 'player';
+      checkFinalTurn();
+      if (G.phase === 'over') return;
+      G.phase = 'idle';
+      renderAll();
+      var tip = G.finalTurn ? '⚡ 最终回合！' : '';
+      if (G.turn === 'computer') {
+        clearCountdown();
+        setMsg(tip + '电脑的回合，正在思考…');
+        var gid = GAME_ID;
+        later(function () { aiTurn(gid); }, 1000);
+      } else {
+        var lockTip = G.swapLock ? '（上回合已换牌，本回合只能决斗）' : '';
+        setMsg(tip + '轮到你了！选择「决斗」或「换牌」' + lockTip);
+        SFX.turn(); // 轮到你提示音
+        startCountdown(15);
+      }
+    }
+
+    function checkFinalTurn() {
+      var both = G.player.hand.length === 1 && G.computer.hand.length === 1;
+      if (both && G.player.hp > 0 && G.computer.hp > 0) {
+        if (!G.announcedFinal) {
+          G.finalTurn = true;
+          G.announcedFinal = true;
+          addLog('⚡ 最终回合！双方都只剩一张牌：决斗伤害翻倍，换牌只能与底牌交换。');
+          setMsg('⚡ 最终回合！');
+          SFX.final(); // 最终回合警示音
+        }
+      }
+    }
+
+    /* ---------- 玩家操作 ---------- */
+    function onDuelClick() {
+      if (G.phase !== 'idle' || G.turn !== 'player') return;
+      SFX.click();
+      G.phase = 'duelPick';
+      setMsg('发起决斗！请选择一张牌出战');
+      renderControls();
+      renderPlayerHand();
+    }
+    function onSwapClick() {
+      if (G.phase !== 'idle' || G.turn !== 'player') return;
+      if (G.swapLock) { setMsg('⚠️ 上一回合已换牌，本回合只能发起决斗！'); return; }
+      SFX.click();
+      G.phase = 'swapPick';
+      setMsg('换牌：请选择一张你要交出去的牌');
+      renderControls();
+      renderPlayerHand();
+    }
+
+    function onCardClick(id) {
+      id = Number(id); // onclick 传入的是字符串，统一转为数字再比较
+      if (G.phase === 'duelPick') {
+        var card = G.player.hand.find(function (c) { return c.id === id; });
+        if (!card) return;
+        SFX.pick(); // 选牌音效
+        clearCountdown(); // 出牌瞬间，倒计时使命完成
+        G.phase = 'duelResolving';
+        setMsg('双方同时出牌…');
+        G.player.hand = G.player.hand.filter(function (c) { return c.id !== id; });
+        var cCard = G.pendingC || smartPickDuelCard();
+        G.pendingC = null;
+        G.computer.hand = G.computer.hand.filter(function (c) { return c.id !== cCard.id; });
+        var gid = GAME_ID;
+        renderAll();
+        showBattleSlot('player', card);
+        (async function () {
+          await delay(700);
+          if (!isCurrent(gid)) return;
+          showBattleSlot('computer', cCard);
+          SFX.reveal(); // 出牌揭示音效
+          await delay(500);
+          if (!isCurrent(gid)) return;
+          await resolveDuelResult(card, cCard, gid);
+        })();
+      } else if (G.phase === 'swapPick') {
+        var give = G.player.hand.find(function (c) { return c.id === id; });
+        if (!give) return;
+        SFX.pick(); // 选牌音效
+        clearCountdown(); // 选牌完成，倒计时消失
+        playerPlaysSwap(give);
+      }
+    }
+
+    /* ---------- 决斗结算 ---------- */
+    async function resolveDuelResult(pCard, cCard, gid) {
+      var res = duelResult(pCard, cCard);
+      var dmg = pCard.count * cCard.count;
+      if (G.finalTurn) dmg *= 2;
+      if (res === 'draw') {
+        addLog('平局！双方打出同类卡，均不损失 HP。');
+        battleMsg('平局', 'draw');
+        SFX.draw();
+      } else if (res === 'a') {
+        G.computer.hp = Math.max(0, G.computer.hp - dmg);
+        G.pHistory.push(pCard.type);
+        addLog('你赢了！「' + cardName(pCard) + '」击败「' + cardName(cCard) + '」，电脑损失 ' + dmg + ' HP！');
+        battleMsg('胜利！电脑 -' + dmg + ' HP', 'win');
+        hpHit('computer', dmg);
+        SFX.win();
+      } else {
+        G.player.hp = Math.max(0, G.player.hp - dmg);
+        addLog('电脑赢了！「' + cardName(cCard) + '」击败「' + cardName(pCard) + '」，你损失 ' + dmg + ' HP…');
+        battleMsg('失败！你 -' + dmg + ' HP', 'lose');
+        hpHit('player', dmg);
+        SFX.lose();
+      }
+      G.discard.push(pCard, cCard);
+      renderAll();
+      await delay(2150); // 桌面停留 2 秒余，便于看清双方出的牌与结算
+      if (!isCurrent(gid)) return;
+      clearBattle();
+      G._nextSwapLock = false; // 决斗后，下一回合恢复换牌资格
+      checkGameOver();
+    }
+
+    function checkGameOver() {
+      var p = G.player.hp, c = G.computer.hp;
+      if (p <= 0 || c <= 0) { endGame(p <= 0 ? 'lose' : 'win'); return; }
+      if (G.finalTurn && G.player.hand.length === 0 && G.computer.hand.length === 0) {
+        if (p > c) endGame('win');
+        else if (c > p) endGame('lose');
+        else endGame('draw');
+        return;
+      }
+      nextTurn();
+    }
+
+    async function endGame(result) {
+      G.phase = 'over';
+      if (result === 'win') { G.stats.wins++; addLog('🎉 你赢了！'); }
+      else if (result === 'lose') { G.stats.losses++; addLog('💀 你输了…'); }
+      else { G.stats.draws++; addLog('🤝 平局！'); }
+      saveStats();
+      renderAll();
+      SFX.over(result); // 对局结束音效
+      await delay(650);
+      showOverlay(result);
+    }
+
+    /* ---------- 换牌 ---------- */
+    async function playerPlaysSwap(pGive) {
+      var gid = GAME_ID;
+      G.phase = 'swapResolving';
+      G.player.hand = G.player.hand.filter(function (c) { return c.id !== pGive.id; });
+      if (G.finalTurn) {
+        var received = { type: G.bottom.type, count: G.bottom.count, id: ++uid };
+        G.bottom = pGive;
+        G.player.hand.push(received);
+        renderAll();
+        showBattleSlot('player', received, true, '你获得');
+        showBattleSlot('computer', pGive, false, '进入底牌');
+        addLog('最终回合：你用「' + cardName(pGive) + '」与底牌交换，获得「' + cardName(received) + '」。底牌保持背面朝上。');
+        battleMsg('换牌完成（底牌区）', 'swap');
+        SFX.swap();
+      } else {
+        var cCard = G.computer.hand[Math.floor(Math.random() * G.computer.hand.length)];
+        G.computer.hand = G.computer.hand.filter(function (c) { return c.id !== cCard.id; });
+        var got = { type: cCard.type, count: cCard.count, id: ++uid };
+        G.player.hand.push(got);
+        G.computer.hand.push(pGive);
+        renderAll();
+        showBattleSlot('player', got, true, '你获得');
+        showBattleSlot('computer', pGive, true, '电脑获得');
+        addLog('换牌完成：你给出「' + cardName(pGive) + '」，随机换到电脑的「' + cardName(got) + '」。');
+        battleMsg('换牌完成', 'swap');
+        SFX.swap();
+      }
+      await delay(2150); // 桌面停留 2 秒余，便于看清交换的两张牌
+      if (!isCurrent(gid)) return;
+      clearBattle();
+      G._nextSwapLock = true; // 换牌后，下一回合双方都不能再换牌
+      nextTurn();
+    }
+
+    /* ---------- 电脑 AI（聪明版：算牌+期望+局势+终局+习惯学习，不偷看手牌） ---------- */
+    // 未出现的牌 = 玩家手牌 ∪ 底牌（底牌仅 1 张，可忽略其影响）
+    function unseenDeck() {
+      var total = { rock_1: 3, rock_2: 2, scissors_1: 3, scissors_2: 2, paper_1: 3, paper_2: 2 };
+      var seen = {};
+      function add(c) { var k = c.type + '_' + c.count; seen[k] = (seen[k] || 0) + 1; }
+      G.discard.forEach(add);
+      G.computer.hand.forEach(add);
+      var unseen = {};
+      for (var k in total) unseen[k] = Math.max(0, total[k] - (seen[k] || 0));
+      return unseen;
+    }
+    // 估算玩家手牌中每种类型/单双的期望张数（超几何均值近似）
+    function playerTypeDist() {
+      var unseen = unseenDeck();
+      var n = G.player.hand.length;
+      var U = 0; for (var k in unseen) U += unseen[k];
+      var byType = { rock: 0, scissors: 0, paper: 0 };
+      var byCount = { rock_1: 0, rock_2: 0, scissors_1: 0, scissors_2: 0, paper_1: 0, paper_2: 0 };
+      if (U === 0) return { byType: byType, byCount: byCount };
+      for (var k in unseen) {
+        var parts = k.split('_'), t = parts[0], cnt = +parts[1];
+        var e = unseen[k] * n / U;
+        byType[t] += e;
+        byCount[k] = e;
+      }
+      return { byType: byType, byCount: byCount };
+    }
+    // 玩家出牌类型概率：算牌分布（主） + 长期习惯（时间衰减加权，次）
+    function predictPlayerType(dist, useHist) {
+      var scores = { rock: dist.byType.rock, scissors: dist.byType.scissors, paper: dist.byType.paper };
+      if (useHist !== false && G.pHistory.length) {
+        var hist = { rock: 0, scissors: 0, paper: 0 };
+        var L = G.pHistory.length;
+        for (var i = 0; i < L; i++) hist[G.pHistory[i]] += Math.pow(0.85, L - 1 - i);
+        scores.rock += hist.rock * 0.35;
+        scores.scissors += hist.scissors * 0.35;
+        scores.paper += hist.paper * 0.35;
+      }
+      var total = scores.rock + scores.scissors + scores.paper;
+      if (total <= 0) return { rock: 1 / 3, scissors: 1 / 3, paper: 1 / 3 };
+      return { rock: scores.rock / total, scissors: scores.scissors / total, paper: scores.paper / total };
+    }
+    // 玩家出某类型时，其图案数量的期望（用于伤害期望计算）
+    function playerCountExpect(pt, dist) {
+      var t = dist.byType[pt];
+      if (t <= 0) return 1;
+      return (dist.byCount[pt + '_1'] * 1 + dist.byCount[pt + '_2'] * 2) / t;
+    }
+
+    /* ---------- 聪明版决策 ---------- */
+    function smartDecideAction() {
+      if (G.swapLock) return 'duel';
+      var hand = G.computer.hand;
+      if (G.finalTurn) {
+        // 终局：落后搏杀，领先求稳
+        if (G.computer.hp < G.player.hp) return 'duel';
+        if (G.computer.hp > G.player.hp) return Math.random() < 0.55 ? 'duel' : 'swap';
+        return Math.random() < 0.7 ? 'duel' : 'swap';
+      }
+      var dist = playerTypeDist();
+      var myStrong = hand.filter(function (c) { return c.count === 2; }).length;
+      var pDuel = 0.5 + myStrong * 0.12;
+      // 玩家双牌多 → 自己牌相对弱，倾向换牌改善
+      pDuel -= (dist.byCount.rock_2 + dist.byCount.scissors_2 + dist.byCount.paper_2) * 0.08;
+      // 局势感知：落后搏、领先稳
+      if (G.computer.hp < G.player.hp) pDuel += 0.12;
+      if (G.computer.hp > G.player.hp) pDuel -= 0.10;
+      pDuel = Math.min(0.85, Math.max(0.25, pDuel));
+      return Math.random() < pDuel ? 'duel' : 'swap';
+    }
+
+    function smartPickDuelCard() {
+      var hand = G.computer.hand;
+      if (!hand.length) return null;
+      var dist = playerTypeDist();
+      var probs = predictPlayerType(dist, !G.finalTurn); // 最终回合用纯分布推算
+      var best = null, bestE = -Infinity;
+      hand.forEach(function (c) {
+        var e = 0;
+        ['rock', 'scissors', 'paper'].forEach(function (pt) {
+          var p = probs[pt];
+          if (p <= 0) return;
+          var pc = playerCountExpect(pt, dist);
+          if (BEATS[c.type] === pt) e += p * c.count * pc;   // 赢：伤害 = 己方数×对方数
+          else if (c.type === pt) e += 0;                     // 平
+          else e -= p * c.count * pc;                         // 输：损失期望
+        });
+        if (e > bestE) { bestE = e; best = c; }
+      });
+      // 15% 随机扰动，防止被玩家反读
+      if (Math.random() < 0.15 && hand.length > 1) best = hand[Math.floor(Math.random() * hand.length)];
+      return best;
+    }
+
+    function smartPickSwapGive() {
+      var hand = G.computer.hand;
+      var probs = predictPlayerType(playerTypeDist(), true);
+      // 类型留牌价值：能克制玩家最可能出牌的牌更有价值
+      var value = { rock: 0, scissors: 0, paper: 0 };
+      ['rock', 'scissors', 'paper'].forEach(function (t) { value[t] = probs[BEATS[t]] || 0; });
+      var pool = hand.slice();
+      pool.sort(function (a, b) {
+        var va = value[a.type] + (a.count === 2 ? 0.25 : 0); // 双牌保留加成
+        var vb = value[b.type] + (b.count === 2 ? 0.25 : 0);
+        return va - vb; // 交出价值最低的
+      });
+      return pool[0];
+    }
+
+    async function aiTurn(gid) {
+      if (!isCurrent(gid) || !G) return;
+      if (G.phase !== 'idle' || G.turn !== 'computer') return;
+      await delay(900);
+      if (!isCurrent(gid) || G.phase !== 'idle' || G.turn !== 'computer') return;
+      var action = smartDecideAction();
+      if (action === 'duel') {
+        G.pendingC = smartPickDuelCard();
+        G.phase = 'duelPick';
+        addLog('电脑发起决斗！请选一张牌迎战');
+        setMsg('⚔️ 电脑向你发起决斗！请选择一张牌迎战');
+        renderAll();
+        startCountdown(15); // 迎战选牌同样限时 15 秒
+      } else {
+        addLog('电脑发起换牌…');
+        setMsg('电脑发起换牌…');
+        renderControls();
+        await aiSwap(gid);
+      }
+    }
+
+    async function aiSwap(gid) {
+      if (!isCurrent(gid) || !G) return;
+      await delay(800);
+      if (!isCurrent(gid)) return;
+      var give = smartPickSwapGive();
+      G.phase = 'swapResolving';
+      G.computer.hand = G.computer.hand.filter(function (c) { return c.id !== give.id; });
+      if (G.finalTurn) {
+        var received = { type: G.bottom.type, count: G.bottom.count, id: ++uid };
+        G.bottom = give;
+        G.computer.hand.push(received);
+        renderAll();
+        addLog('最终回合：电脑用「' + cardName(give) + '」与底牌交换。');
+        battleMsg('电脑换牌（底牌区）', 'swap');
+        SFX.swap();
+      } else {
+        var pCard = G.player.hand[Math.floor(Math.random() * G.player.hand.length)];
+        G.player.hand = G.player.hand.filter(function (c) { return c.id !== pCard.id; });
+        var got = { type: pCard.type, count: pCard.count, id: ++uid };
+        G.computer.hand.push(got);
+        G.player.hand.push(give);
+        renderAll();
+        showBattleSlot('player', give, true, '你获得');
+        showBattleSlot('computer', got, true, '电脑获得');
+        addLog('电脑与你换牌：你获得「' + cardName(give) + '」，电脑随机拿走你的「' + cardName(got) + '」。');
+        battleMsg('换牌完成', 'swap');
+        SFX.swap();
+      }
+      await delay(2150); // 桌面停留 2 秒余，便于看清交换的两张牌
+      if (!isCurrent(gid)) return;
+      clearBattle();
+      G._nextSwapLock = true; // 换牌后，下一回合双方都不能再换牌
+      nextTurn();
+    }
+
+    /* ================= 渲染 ================= */
+    function $id(x) { return document.getElementById(x); }
+
+    function renderAll() {
+      renderHp();
+      renderTurn();
+      renderComputerHand();
+      renderPlayerHand();
+      renderDiscard();
+      renderControls();
+      renderStats();
+      renderLog();
+    }
+
+    function heartsHtml(hp) {
+      var s = '';
+      for (var i = 0; i < 7; i++) s += '<span class="heart' + (i < hp ? '' : ' lost') + '">♥</span>';
+      return s;
+    }
+    function renderHp() {
+      $id('computerHearts').innerHTML = heartsHtml(G.computer.hp);
+      $id('computerHpNum').textContent = G.computer.hp + ' / 7';
+      $id('playerHearts').innerHTML = heartsHtml(G.player.hp);
+      $id('playerHpNum').textContent = G.player.hp + ' / 7';
+    }
+    function renderTurn() {
+      $id('compZone').classList.toggle('active', G.turn === 'computer' && G.phase !== 'over');
+      $id('playerZone').classList.toggle('active', G.turn === 'player' && G.phase !== 'over');
+    }
+    function renderComputerHand() {
+      $id('computerHand').innerHTML = G.computer.hand.map(function () {
+        return '<div class="card back"><img src="' + BACK_IMG + '" alt="卡背"></div>';
+      }).join('');
+    }
+    function renderPlayerHand() {
+      var pickable = G.phase === 'duelPick' || G.phase === 'swapPick';
+      var html = G.player.hand.map(function (c) {
+        return '<div class="card' + (pickable ? ' pickable' : '') + '" onclick="' +
+          (pickable ? "onCardClick('" + c.id + "')" : '') + '">' +
+          '<img src="' + cardImg(c) + '" alt="' + cardName(c) + '">' +
+          '<div class="card-name">' + cardName(c) + '</div></div>';
+      }).join('');
+      $id('playerHand').innerHTML = html || '<span class="empty-hint">手牌为空</span>';
+    }
+    function renderDiscard() {
+      var groups = {};
+      G.discard.forEach(function (c) {
+        var k = c.type + '_' + c.count;
+        if (!groups[k]) groups[k] = { type: c.type, count: c.count, n: 0 };
+        groups[k].n++;
+      });
+      var order = ['rock', 'scissors', 'paper'];
+      var keys = Object.keys(groups).sort(function (a, b) {
+        var ta = a.split('_')[0], ca = +a.split('_')[1];
+        var tb = b.split('_')[0], cb = +b.split('_')[1];
+        return order.indexOf(ta) - order.indexOf(tb) || ca - cb;
+      });
+      $id('discard').innerHTML = keys.length ? keys.map(function (k) {
+        var g = groups[k];
+        var fake = { type: g.type, count: g.count };
+        return '<div class="discard-item"><img src="' + cardImg(fake) + '" alt="' + cardName(fake) + '">' +
+          '<span class="badge">×' + g.n + '</span></div>';
+      }).join('') : '<span class="empty-hint">暂无弃牌</span>';
+    }
+    function renderControls() {
+      var mine = G.turn === 'player' && G.phase === 'idle';
+      $id('btnDuel').disabled = !mine;
+      $id('btnSwap').disabled = !mine || G.swapLock;
+      $id('btnDuel').textContent = G.finalTurn ? '决斗（伤害×2）' : '决斗';
+      $id('btnSwap').textContent = G.finalTurn ? '换牌（与底牌）' : (G.swapLock ? '换牌·禁用' : '换牌');
+    }
+    function renderStats() {
+      $id('statsBar').textContent = '胜 ' + G.stats.wins + ' · 负 ' + G.stats.losses + ' · 平 ' + G.stats.draws;
+    }
+    function renderLog() {
+      $id('log').innerHTML = G.log.map(function (l) {
+        return '<div class="log-item">' + l.msg + '</div>';
+      }).join('');
+    }
+
+    function setMsg(t) { $id('statusMsg').innerHTML = t; }
+    function addLog(msg) {
+      G.log.unshift({ msg: msg });
+      if (G.log.length > 60) G.log.pop();
+      renderLog();
+    }
+    function battleMsg(text, kind) {
+      var el = $id('battleMsg');
+      el.textContent = text;
+      el.className = 'battle-msg ' + (kind || '');
+    }
+    function showBattleSlot(side, card, faceUp, label) {
+      faceUp = faceUp !== false; // 默认明牌向上展示
+      var cardEl = $id('slot-' + side); // #slot-player / #slot-computer 本身即是 .slot-card
+      var slotWrap = cardEl.parentElement;
+      if (label) slotWrap.querySelector('.slot-label').textContent = label;
+      cardEl.innerHTML = faceUp
+        ? '<img src="' + cardImg(card) + '" alt=""><div class="slot-name">' + cardName(card) + '</div>'
+        : '<img src="' + BACK_IMG + '" alt=""><div class="slot-name">卡背</div>';
+      cardEl.classList.remove('reveal');
+      void cardEl.offsetWidth; // 重置动画
+      cardEl.classList.add('reveal');
+    }
+    function clearBattle() {
+      ['slot-player', 'slot-computer'].forEach(function (id) {
+        var el = $id(id);
+        el.innerHTML = '';
+        el.classList.remove('reveal');
+      });
+      $id('slot-player').parentElement.querySelector('.slot-label').textContent = '你';
+      $id('slot-computer').parentElement.querySelector('.slot-label').textContent = '电脑';
+      $id('vs').textContent = 'VS';
+      battleMsg('', '');
+    }
+    function hpHit(side, dmg) {
+      SFX.hit(); // 受击音效
+      var box = $id(side + 'HpBox');
+      box.classList.remove('hp-flash');
+      void box.offsetWidth;
+      box.classList.add('hp-flash');
+      var float = document.createElement('div');
+      float.className = 'dmg-float';
+      float.textContent = '-' + dmg;
+      box.appendChild(float);
+      setTimeout(function () { float.remove(); }, 950);
+    }
+
+    /* ================= 音效系统（Web Audio 合成，零素材，电脑/移动端通用） ================= */
+    var SFX = {
+      ctx: null, muted: false,
+      ensure: function () {
+        try {
+          if (!SFX.ctx) SFX.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (SFX.ctx.state === 'suspended') SFX.ctx.resume();
+          return SFX.ctx;
+        } catch (e) { return null; }
+      },
+      // 单音：freq 频率(Hz) dur 时长(s) type 波形 vol 音量 delay 延迟(s)
+      beep: function (freq, dur, type, vol, delay) {
+        if (SFX.muted) return;
+        try {
+          var ctx = SFX.ensure(); if (!ctx) return;
+          var t0 = ctx.currentTime + (delay || 0);
+          var o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = type || 'sine';
+          o.frequency.setValueAtTime(freq, t0);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(vol || 0.15, t0 + 0.015);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+          o.connect(g); g.connect(ctx.destination);
+          o.start(t0); o.stop(t0 + dur + 0.05);
+        } catch (e) {}
+      },
+      // 滑音：频率从 f1 滑到 f2
+      sweep: function (f1, f2, dur, type, vol, delay) {
+        if (SFX.muted) return;
+        try {
+          var ctx = SFX.ensure(); if (!ctx) return;
+          var t0 = ctx.currentTime + (delay || 0);
+          var o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = type || 'sine';
+          o.frequency.setValueAtTime(f1, t0);
+          o.frequency.linearRampToValueAtTime(f2, t0 + dur);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(vol || 0.15, t0 + 0.015);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+          o.connect(g); g.connect(ctx.destination);
+          o.start(t0); o.stop(t0 + dur + 0.05);
+        } catch (e) {}
+      },
+      /* ---- 组合音效 ---- */
+      coin:   function () { SFX.beep(1400, .06, 'square', .10); SFX.beep(1800, .06, 'square', .10, .09); SFX.beep(2200, .07, 'square', .10, .18); SFX.sweep(500, 180, .18, 'sine', .16, .27); },
+      pick:   function () { SFX.beep(760, .07, 'square', .10); },
+      click:  function () { SFX.beep(520, .05, 'sine', .07); },
+      reveal: function () { SFX.sweep(900, 300, .16, 'sawtooth', .10); },
+      win:    function () { SFX.beep(523, .11, 'triangle', .14); SFX.beep(659, .11, 'triangle', .14, .11); SFX.beep(784, .16, 'triangle', .15, .22); },
+      lose:   function () { SFX.beep(392, .13, 'triangle', .13); SFX.beep(311, .13, 'triangle', .13, .13); SFX.beep(262, .20, 'triangle', .14, .26); },
+      draw:   function () { SFX.beep(440, .10, 'triangle', .12); SFX.beep(440, .14, 'triangle', .12, .14); },
+      hit:    function () { SFX.beep(180, .28, 'sawtooth', .20); SFX.beep(90, .30, 'sine', .18, .02); },
+      swap:   function () { SFX.sweep(300, 900, .12, 'triangle', .12); SFX.sweep(900, 300, .12, 'triangle', .12, .13); },
+      final:  function () { SFX.beep(880, .12, 'square', .12); SFX.beep(880, .12, 'square', .12, .16); SFX.beep(1174, .22, 'square', .13, .32); },
+      tick:   function () { SFX.beep(1000, .05, 'square', .07); },
+      turn:   function () { SFX.beep(660, .10, 'sine', .10); },
+      over:   function (r) { if (r === 'win') SFX.win(); else if (r === 'lose') SFX.lose(); else SFX.draw(); }
+    };
+
+    // 浏览器自动播放策略：需要一次用户交互解锁 AudioContext（iOS 尤其严格）
+    function unlockAudio() { SFX.ensure(); }
+    document.addEventListener('pointerdown', unlockAudio, { once: true });
+    document.addEventListener('touchstart', unlockAudio, { once: true });
+    document.addEventListener('click', unlockAudio, { once: true });
+
+    function toggleMute() {
+      SFX.muted = !SFX.muted;
+      try { localStorage.setItem('rps-mute', SFX.muted ? '1' : '0'); } catch (e) {}
+      var b = $id('btnMute');
+      if (b) b.textContent = SFX.muted ? '🔇' : '🔊';
+    }
+    function initMute() {
+      try { SFX.muted = localStorage.getItem('rps-mute') === '1'; } catch (e) {}
+      var b = $id('btnMute');
+      if (b) b.textContent = SFX.muted ? '🔇' : '🔊';
+    }
+
+    /* ================= 回合倒计时（15 秒） ================= */
+    var countdownTimer = null;
+
+    // 玩家当前是否处于可操作窗口：选择行动 / 发起决斗选牌 / 换牌选牌 / 迎战电脑决斗
+    function playerActive() {
+      if (!G) return false;
+      if (G.phase === 'duelPick') return true;                 // 出牌窗口（自己发起或迎战电脑）
+      if (G.phase === 'swapPick') return G.turn === 'player';  // 换牌选牌
+      if (G.phase === 'idle') return G.turn === 'player';      // 选择行动
+      return false;
+    }
+
+    function clearCountdown() {
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+      var el = $id('bigTimer');
+      if (el) { el.textContent = ''; el.classList.add('hidden'); el.classList.remove('urgent'); }
+    }
+    function renderCountdown() {
+      var el = $id('bigTimer');
+      if (!el) return;
+      if (playerActive() && G.countdownLeft > 0) {
+        el.textContent = G.countdownLeft;
+        el.classList.remove('hidden');
+        el.classList.toggle('urgent', G.countdownLeft <= 5);
+      } else {
+        el.textContent = '';
+        el.classList.add('hidden');
+        el.classList.remove('urgent');
+      }
+    }
+    function startTick() {
+      countdownTimer = setInterval(function () {
+        if (!playerActive()) { clearCountdown(); return; }
+        G.countdownLeft--;
+        if (G.countdownLeft <= 5 && G.countdownLeft > 0) SFX.tick(); // 最后5秒滴答
+        if (G.countdownLeft <= 0) {
+          G.countdownLeft = 0;
+          renderCountdown();
+          autoAct();
+          return;
+        }
+        renderCountdown();
+      }, 1000);
+    }
+    function startCountdown(seconds) {
+      clearCountdown();
+      G.countdownLeft = seconds;
+      renderCountdown();
+      startTick();
+    }
+    function pauseCountdown() {
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    }
+    function resumeCountdown() {
+      if (countdownTimer) return;          // 已在运行
+      if (!playerActive()) return;         // 不在操作窗口，不恢复
+      if (!G || G.countdownLeft <= 0) return;
+      startTick();                         // 从暂停的秒数继续
+    }
+    // 超时自动行动：按当前阶段随机完成操作
+    function autoAct() {
+      if (!G) return;
+      if (G.phase === 'idle') {
+        if (G.turn !== 'player') return;
+        G.phase = 'duelPick';
+        addLog('⏱ 15 秒时间到！自动发起决斗并随机出牌。');
+      } else if (G.phase === 'duelPick') {
+        addLog('⏱ 15 秒时间到！自动随机出牌。');
+      } else if (G.phase === 'swapPick') {
+        if (G.turn !== 'player') return;
+        addLog('⏱ 15 秒时间到！自动随机选牌换牌。');
+      } else {
+        return;
+      }
+      if (!G.player.hand.length) return;
+      var card = G.player.hand[Math.floor(Math.random() * G.player.hand.length)];
+      onCardClick(card.id);
+    }
+
+    /* ================= 浮层 ================= */
+    // 规则正文（开场介绍与规则弹窗共用）
+    var RULES_HTML =
+      '<ul>' +
+      '<li>双方各有 <b>7 点 HP</b>；全场共 <b>15 张牌</b>（单个石头×3、两个石头×2、单个剪刀×3、两个剪刀×2、单个布×3、两个布×2）。</li>' +
+      '<li>开局随机一张牌放入<b>底牌区</b>，双方各分 7 张，互不可见；抛硬币决定先手。</li>' +
+      '<li><b>决斗</b>：双方各出一张牌，按照 （单个/两个）石头 > （单个/两个）剪刀 > （单个/两个）布 > （单个/两个）石头...判定回合胜负。失败方损失 HP = <b>双方牌面图案数量之积</b>；同类牌为平局，均不损失 HP。出过的牌进入弃牌区（明牌）。</li>' +
+      '<li><b>换牌</b>：选一张自己的牌，与对手手牌中<b>随机</b>的一张交换（只能看到卡背）。</li>' +
+      '<li><b>最终回合</b>：双方都只剩一张牌且 HP＞0 时触发，决斗伤害<b>翻倍</b>，换牌只能与<b>底牌</b>交换。</li>' +
+      '<li><b>换牌限制</b>：不能连续两回合换牌——若上一回合发生了换牌（含最终回合与底牌交换），本回合双方都只能发起「决斗」。</li>' +
+      '<li><b>思考时间</b>：你的每个回合有 <b>15 秒</b> 操作时间，超时系统将自动随机完成当前操作。</li>' +
+      '<li><b>胜利条件</b>：一回合结束后，任何一方 HP 归零即本轮游戏告负。</li>' +
+      '</ul>';
+
+    // 开场规则介绍：点击「开始游戏」后才进入对局（此时桌面与手牌区留空）
+    function showIntro() {
+      $id('overlay').innerHTML =
+        '<div class="overlay-card" style="max-width:520px;max-height:88vh;overflow-y:auto">' +
+        '<div class="ov-title" style="font-size:24px">惊险石头剪子布</div>' +
+        '<div class="ov-sub">卡片对战 · 规则介绍</div>' +
+        '<div class="help-body">' + RULES_HTML + '</div>' +
+        '<div style="margin-top:16px"><button class="btn primary big" onclick="startGame()">开始游戏</button></div>' +
+        '<div style="margin-top:12px;color:rgba(255,255,255,.4);font-size:11px">版本 ' + VERSION + '</div>' +
+        '</div>';
+      $id('overlay').classList.remove('hidden');
+    }
+
+    function showCoinOverlay() {
+      $id('overlay').innerHTML =
+        '<div class="overlay-card"><div class="coin">RPS</div>' +
+        '<div class="ov-title">抛硬币决定先手</div>' +
+        '<div class="ov-sub" id="coinResult">…</div></div>';
+      $id('overlay').classList.remove('hidden');
+    }
+    function hideCoinOverlay(turn) {
+      $id('coinResult').textContent = turn === 'player' ? '你获得先手！' : '电脑获得先手！';
+    }
+    function showOverlay(result) {
+      var map = {
+        win:  ['🎉 胜利！', '你战胜了电脑', 'win'],
+        lose: ['💀 失败', '电脑战胜了你', 'lose'],
+        draw: ['🤝 平局', '不分胜负', 'draw']
+      };
+      var m = map[result];
+      $id('overlay').innerHTML =
+        '<div class="overlay-card">' +
+        '<div class="ov-title">' + m[0] + '</div>' +
+        '<div class="ov-sub">' + m[1] + '</div>' +
+        '<div class="ov-hp">你的剩余 HP：' + G.player.hp + '　电脑剩余 HP：' + G.computer.hp + '</div>' +
+        '<div class="ov-stats">总战绩：胜 ' + G.stats.wins + ' · 负 ' + G.stats.losses + ' · 平 ' + G.stats.draws + '</div>' +
+        '<button class="btn primary big" onclick="restart()">再来一局</button></div>';
+      $id('overlay').classList.remove('hidden');
+    }
+    function showHelp() {
+      pauseCountdown(); // 打开规则页时暂停倒计时
+      $id('overlay').innerHTML =
+        '<div class="overlay-card" style="max-height:88vh;overflow-y:auto">' +
+        '<div class="ov-title" style="font-size:22px">游戏规则</div>' +
+        '<div class="help-body">' + RULES_HTML + '</div>' +
+        '<div style="margin-top:14px"><button class="btn primary" onclick="closeHelp()">知道了</button></div>' +
+        '<div style="margin-top:14px;color:rgba(255,255,255,.55);font-size:12px">作者：hezicola　<a href="mailto:hezicola@outlook.com" onclick="return openMail(event)" style="color:var(--gold)">hezicola@outlook.com</a></div>' +
+        '<div style="margin-top:6px;color:rgba(255,255,255,.4);font-size:11px">版本 ' + VERSION + '</div>' +
+        '</div>';
+      $id('overlay').classList.remove('hidden');
+    }
+    function closeHelp() {
+      $id('overlay').classList.add('hidden');
+      if (!G) { showIntro(); return; } // 尚未开始游戏，回到开场介绍
+      resumeCountdown(); // 关闭规则页后恢复倒计时
+    }
+
+    /* 打开外部链接（邮箱）：平台内走 SDK，浏览器直开走默认 mailto */
+    function openMail(e) {
+      if (window.spherse && window.spherse.openExternalLink) {
+        e.preventDefault();
+        spherse.openExternalLink('mailto:hezicola@outlook.com');
+        return false;
+      }
+      return true;
+    }
+
+    function restart() {
+      $id('overlay').classList.add('hidden');
+      startGame();
+    }
+
+    /* ================= 战绩持久化（本地 localStorage + 平台数据文件 双通道） ================= */
+    // localStorage 不依赖文件名、不依赖 json 文件、不依赖平台：
+    // 改名后在资源管理器打开、拷贝给朋友（无 json 文件）都能正常记录战绩。
+    var LS_KEY = 'rps-card-battle-stats-v1';
+
+    function statsFromLocal() {
+      try {
+        var raw = window.localStorage.getItem(LS_KEY);
+        if (!raw) return null;
+        var d = JSON.parse(raw);
+        return { wins: +d.wins || 0, losses: +d.losses || 0, draws: +d.draws || 0 };
+      } catch (e) { return null; }
+    }
+    function statsToLocal(s) {
+      try {
+        window.localStorage.setItem(LS_KEY, JSON.stringify({ wins: s.wins, losses: s.losses, draws: s.draws }));
+      } catch (e) { /* 隐私模式等场景下可能不可用，忽略 */ }
+    }
+    function applyStats(s) {
+      if (!G || !s) return;
+      G.stats.wins = s.wins || 0;
+      G.stats.losses = s.losses || 0;
+      G.stats.draws = s.draws || 0;
+      renderStats();
+    }
+
+    function loadStats() {
+      // 1) 本地战绩（localStorage）：始终可用，同步生效
+      applyStats(statsFromLocal());
+      // 2) 平台数据文件（window.spherse）：在平台内打开时读取，作为增强
+      try {
+        if (!window.spherse || !window.spherse.data) return;
+        var gid = GAME_ID;
+        Promise.all([
+          window.spherse.data.get({ file: STATS_FILE, key: 'wins' }),
+          window.spherse.data.get({ file: STATS_FILE, key: 'losses' }),
+          window.spherse.data.get({ file: STATS_FILE, key: 'draws' })
+        ]).then(function (r) {
+          if (!G || gid !== GAME_ID) return;
+          var s = { wins: r[0] || 0, losses: r[1] || 0, draws: r[2] || 0 };
+          applyStats(s);
+          // 本地无存档时，把平台旧战绩迁移到 localStorage，脱离平台后仍可继续累计
+          if (!statsFromLocal()) statsToLocal(s);
+        }).catch(function () {});
+      } catch (e) { /* 战绩读取失败不影响开局 */ }
+    }
+    function saveStats() {
+      if (!G) return;
+      // 1) 本地战绩（localStorage）：始终写入
+      statsToLocal(G.stats);
+      // 2) 平台数据文件（window.spherse）：在平台内打开时同步写入
+      try {
+        if (!window.spherse || !window.spherse.data) return;
+        Promise.all([
+          window.spherse.data.set({ file: STATS_FILE, key: 'wins', value: G.stats.wins }),
+          window.spherse.data.set({ file: STATS_FILE, key: 'losses', value: G.stats.losses }),
+          window.spherse.data.set({ file: STATS_FILE, key: 'draws', value: G.stats.draws })
+        ]).catch(function () { /* 静默失败，不影响游戏 */ });
+      } catch (e) { /* 静默失败，不影响游戏 */ }
+    }
+
+    /* ================= 启动 ================= */
+    document.getElementById('verTag').textContent = VERSION;
+    initMute();   // 恢复静音偏好
+    showIntro();  // 开场规则介绍，点击「开始游戏」后才进入对局
+  </script>
+</body>
+</html>
