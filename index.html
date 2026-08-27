@@ -232,7 +232,7 @@
       <div class="hdr-right">
         <span class="ver" id="verTag"></span>
         <span class="stats" id="statsBar">胜 0 · 负 0 · 平 0</span>
-        <button class="mini" onclick="showHelp()">规则</button>
+        <button class="mini" onclick="showHelp()">规则 | 暂停</button>
         <button class="mini" onclick="toggleMute()" id="btnMute">🔊</button>
         <button class="mini" onclick="restart()">重开</button>
       </div>
@@ -385,7 +385,7 @@
     }
 
     /* ================= 对战流程 ================= */
-    var VERSION = 'v1.4.6';
+    var VERSION = 'v1.4.7';
     function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 
     function startGame() {
@@ -558,6 +558,14 @@
     async function endGame(result) {
       G.phase = 'over';
       G.lastResult = result; // 记录对局结果，供关闭规则页后恢复结束浮层
+      // 动态难度调整：玩家连败则轻度放水，赢回一局立即恢复全难度
+      if (result === 'win') {
+        LOSE_STREAK = 0;
+        AI_DIFF = 1;
+      } else if (result === 'lose') {
+        LOSE_STREAK++;
+        AI_DIFF = Math.max(AI_DIFF_MIN, 1 - LOSE_STREAK * AI_DIFF_STEP);
+      }
       if (result === 'win') { G.stats.wins++; addLog('🎉 你赢了！'); }
       else if (result === 'lose') { G.stats.losses++; addLog('💀 你输了…'); }
       else { G.stats.draws++; addLog('🤝 平局！'); }
@@ -604,6 +612,12 @@
     }
 
     /* ---------- 电脑 AI（聪明版：算牌+期望+局势+终局+习惯学习，不偷看手牌） ---------- */
+    // ===== 动态难度调整（DDA）参数（可自行调节手感） =====
+    var AI_DIFF = 1;          // 当前难度系数：1 = 全难，数值越低 AI 越放水
+    var AI_DIFF_MIN = 0.6;    // 放水下限（0.5 更放水，0.8 更克制）
+    var AI_DIFF_STEP = 0.15;  // 每连败一局降低的量
+    var LOSE_STREAK = 0;      // 玩家当前连败局数（跨对局累计，重开不重置）
+
     // 未出现的牌 = 玩家手牌 ∪ 底牌（底牌仅 1 张，可忽略其影响）
     function unseenDeck() {
       var total = { rock_1: 3, rock_2: 2, scissors_1: 3, scissors_2: 2, paper_1: 3, paper_2: 2 };
@@ -632,8 +646,13 @@
       return { byType: byType, byCount: byCount };
     }
     // 玩家出牌类型概率：算牌分布（主） + 长期习惯（时间衰减加权，次）
+    // 放水机制：AI_DIFF 越低，算牌分布占比越弱（趋于均匀先验），预判精度下降
     function predictPlayerType(dist, useHist) {
-      var scores = { rock: dist.byType.rock, scissors: dist.byType.scissors, paper: dist.byType.paper };
+      var scores = {
+        rock: dist.byType.rock * AI_DIFF + (1 - AI_DIFF),
+        scissors: dist.byType.scissors * AI_DIFF + (1 - AI_DIFF),
+        paper: dist.byType.paper * AI_DIFF + (1 - AI_DIFF)
+      };
       if (useHist !== false && G.pHistory.length) {
         var hist = { rock: 0, scissors: 0, paper: 0 };
         var L = G.pHistory.length;
@@ -671,6 +690,7 @@
       // 局势感知：落后搏、领先稳
       if (G.computer.hp < G.player.hp) pDuel += 0.12;
       if (G.computer.hp > G.player.hp) pDuel -= 0.10;
+      pDuel *= AI_DIFF; // 放水机制：连败时 AI 决斗更保守，对抗强度下降
       pDuel = Math.min(0.85, Math.max(0.25, pDuel));
       return Math.random() < pDuel ? 'duel' : 'swap';
     }
@@ -693,8 +713,9 @@
         });
         if (e > bestE) { bestE = e; best = c; }
       });
-      // 15% 随机扰动，防止被玩家反读
-      if (Math.random() < 0.15 && hand.length > 1) best = hand[Math.floor(Math.random() * hand.length)];
+      // 随机扰动（放水机制：AI_DIFF 越低扰动越大，AI 出牌更随机，给玩家机会）
+      var shake = 0.15 + (1 - AI_DIFF) * 0.4;
+      if (Math.random() < shake && hand.length > 1) best = hand[Math.floor(Math.random() * hand.length)];
       return best;
     }
 
@@ -706,8 +727,8 @@
       ['rock', 'scissors', 'paper'].forEach(function (t) { value[t] = probs[BEATS[t]] || 0; });
       var pool = hand.slice();
       pool.sort(function (a, b) {
-        var va = value[a.type] + (a.count === 2 ? 0.25 : 0); // 双牌保留加成
-        var vb = value[b.type] + (b.count === 2 ? 0.25 : 0);
+        var va = value[a.type] + (a.count === 2 ? 0.25 * AI_DIFF : 0); // 双牌保留加成（放水时更易交出双牌）
+        var vb = value[b.type] + (b.count === 2 ? 0.25 * AI_DIFF : 0);
         return va - vb; // 交出价值最低的
       });
       return pool[0];
