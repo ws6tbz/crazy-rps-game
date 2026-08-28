@@ -103,6 +103,11 @@
       outline-color: var(--gold);
     }
     .card.pickable:active { transform: translateY(-3px) scale(1.02); }
+    .card.selected {
+      outline-color: var(--gold);
+      transform: translateY(-6px) scale(1.05);
+      box-shadow: 0 8px 18px rgba(0,0,0,.55);
+    }
 
     /* ---------- 桌面区 ---------- */
     .table-row { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; margin-bottom: 6px; }
@@ -376,6 +381,7 @@
         swapLock: false,        // 本回合是否禁止换牌（上一回合换过牌则 true）
         _nextSwapLock: false,   // 结算后传递给下一回合的换牌限制
         countdownLeft: 15,
+        selectedCardId: null,   // 玩家当前选中的手牌 id（先选牌，再点按钮）
         countdownRounds: 0,     // 已消耗倒计时的回合数（玩家决斗/换牌、电脑决斗均含玩家倒计时）
         lastCompAction: null,   // 电脑上一回合的行动：'duel' 或 'swap'
         stats: { wins: 0, losses: 0, draws: 0 },
@@ -385,7 +391,7 @@
     }
 
     /* ================= 对战流程 ================= */
-    var VERSION = 'v1.4.7';
+    var VERSION = 'v1.4.8';
     function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 
     function startGame() {
@@ -411,7 +417,7 @@
             setMsg('电脑先手，正在思考…');
             later(function () { aiTurn(gid); }, 1100);
           } else {
-            setMsg('你获得先手！选择「决斗」或「换牌」');
+            setMsg('你获得先手！先选一张牌，再点「决斗」或「换牌」');
             startCountdown(countdownSeconds());
           }
         }, 1000);
@@ -427,6 +433,7 @@
       var consumed = (G.turn === 'player') || (G.lastCompAction === 'duel');
       if (consumed) G.countdownRounds++;
       G.turn = G.turn === 'player' ? 'computer' : 'player';
+      G.selectedCardId = null; // 回合切换清空选中
       checkFinalTurn();
       if (G.phase === 'over') return;
       G.phase = 'idle';
@@ -439,7 +446,7 @@
         later(function () { aiTurn(gid); }, 1000);
       } else {
         var lockTip = G.swapLock ? '（上回合已换牌，本回合只能决斗）' : '';
-        setMsg(tip + '轮到你了！选择「决斗」或「换牌」' + lockTip);
+        setMsg(tip + '轮到你了！先选一张牌，再点「决斗」或「换牌」' + lockTip);
         SFX.turn(); // 轮到你提示音
         startCountdown(countdownSeconds());
       }
@@ -459,56 +466,66 @@
     }
 
     /* ---------- 玩家操作 ---------- */
+    // 新操作逻辑：玩家主权时「先选牌，再点按钮」执行
     function onDuelClick() {
       if (G.phase !== 'idle' || G.turn !== 'player') return;
+      var card = G.player.hand.find(function (c) { return c.id === G.selectedCardId; });
+      if (!card) { setMsg('请先选择一张手牌，再点击「决斗」'); return; }
       SFX.click();
-      G.phase = 'duelPick';
-      setMsg('发起决斗！请选择一张牌出战');
-      renderControls();
-      renderPlayerHand();
+      performDuel(card);
     }
     function onSwapClick() {
       if (G.phase !== 'idle' || G.turn !== 'player') return;
       if (G.swapLock) { setMsg('⚠️ 上一回合已换牌，本回合只能发起决斗！'); return; }
+      var give = G.player.hand.find(function (c) { return c.id === G.selectedCardId; });
+      if (!give) { setMsg('请先选择一张手牌，再点击「换牌」'); return; }
       SFX.click();
-      G.phase = 'swapPick';
-      setMsg('换牌：请选择一张你要交出去的牌');
-      renderControls();
-      renderPlayerHand();
+      clearCountdown();
+      G.selectedCardId = null;
+      playerPlaysSwap(give);
     }
 
     function onCardClick(id) {
       id = Number(id); // onclick 传入的是字符串，统一转为数字再比较
+      if (G.phase === 'idle' && G.turn === 'player') {
+        // 主权回合：点击手牌切换选中状态（再点同一张取消选中）
+        G.selectedCardId = (G.selectedCardId === id) ? null : id;
+        SFX.pick();
+        renderPlayerHand();
+        renderControls();
+        return;
+      }
       if (G.phase === 'duelPick') {
+        // 迎战电脑决斗：点牌直接出牌
         var card = G.player.hand.find(function (c) { return c.id === id; });
         if (!card) return;
-        SFX.pick(); // 选牌音效
-        clearCountdown(); // 出牌瞬间，倒计时使命完成
-        G.phase = 'duelResolving';
-        setMsg('双方同时出牌…');
-        G.player.hand = G.player.hand.filter(function (c) { return c.id !== id; });
-        var cCard = G.pendingC || smartPickDuelCard();
-        G.pendingC = null;
-        G.computer.hand = G.computer.hand.filter(function (c) { return c.id !== cCard.id; });
-        var gid = GAME_ID;
-        renderAll();
-        showBattleSlot('player', card);
-        (async function () {
-          await delay(700);
-          if (!isCurrent(gid)) return;
-          showBattleSlot('computer', cCard);
-          SFX.reveal(); // 出牌揭示音效
-          await delay(500);
-          if (!isCurrent(gid)) return;
-          await resolveDuelResult(card, cCard, gid);
-        })();
-      } else if (G.phase === 'swapPick') {
-        var give = G.player.hand.find(function (c) { return c.id === id; });
-        if (!give) return;
-        SFX.pick(); // 选牌音效
-        clearCountdown(); // 选牌完成，倒计时消失
-        playerPlaysSwap(give);
+        SFX.pick();
+        performDuel(card);
       }
+    }
+
+    // 执行决斗：玩家出 card，电脑应战
+    function performDuel(card) {
+      clearCountdown();
+      G.selectedCardId = null;
+      G.phase = 'duelResolving';
+      setMsg('双方同时出牌…');
+      G.player.hand = G.player.hand.filter(function (c) { return c.id !== card.id; });
+      var cCard = G.pendingC || smartPickDuelCard();
+      G.pendingC = null;
+      G.computer.hand = G.computer.hand.filter(function (c) { return c.id !== cCard.id; });
+      var gid = GAME_ID;
+      renderAll();
+      showBattleSlot('player', card);
+      (async function () {
+        await delay(700);
+        if (!isCurrent(gid)) return;
+        showBattleSlot('computer', cCard);
+        SFX.reveal(); // 出牌揭示音效
+        await delay(500);
+        if (!isCurrent(gid)) return;
+        await resolveDuelResult(card, cCard, gid);
+      })();
     }
 
     /* ---------- 决斗结算 ---------- */
@@ -826,9 +843,11 @@
       }).join('');
     }
     function renderPlayerHand() {
-      var pickable = G.phase === 'duelPick' || G.phase === 'swapPick';
+      // 可点：玩家主权回合（选牌）或迎战电脑决斗（点牌直接出牌）
+      var pickable = (G.phase === 'idle' && G.turn === 'player') || G.phase === 'duelPick';
       var html = G.player.hand.map(function (c) {
-        return '<div class="card' + (pickable ? ' pickable' : '') + '" onclick="' +
+        var selected = G.selectedCardId === c.id;
+        return '<div class="card' + (pickable ? ' pickable' : '') + (selected ? ' selected' : '') + '" onclick="' +
           (pickable ? "onCardClick('" + c.id + "')" : '') + '">' +
           '<img src="' + cardImg(c) + '" alt="' + cardName(c) + '">' +
           '<div class="card-name">' + cardName(c) + '</div></div>';
@@ -857,8 +876,9 @@
     }
     function renderControls() {
       var mine = G.turn === 'player' && G.phase === 'idle';
-      $id('btnDuel').disabled = !mine;
-      $id('btnSwap').disabled = !mine || G.swapLock;
+      var hasSel = G.selectedCardId != null && G.player.hand.some(function (c) { return c.id === G.selectedCardId; });
+      $id('btnDuel').disabled = !mine || !hasSel;
+      $id('btnSwap').disabled = !mine || !hasSel || G.swapLock;
       $id('btnDuel').textContent = G.finalTurn ? '决斗（伤害×2）' : '决斗';
       $id('btnSwap').textContent = G.finalTurn ? '换牌（与底牌）' : (G.swapLock ? '换牌·禁用' : '换牌');
     }
@@ -1001,9 +1021,8 @@
     // 玩家当前是否处于可操作窗口：选择行动 / 发起决斗选牌 / 换牌选牌 / 迎战电脑决斗
     function playerActive() {
       if (!G) return false;
-      if (G.phase === 'duelPick') return true;                 // 出牌窗口（自己发起或迎战电脑）
-      if (G.phase === 'swapPick') return G.turn === 'player';  // 换牌选牌
-      if (G.phase === 'idle') return G.turn === 'player';      // 选择行动
+      if (G.phase === 'duelPick') return true;                 // 迎战电脑决斗（点牌出牌）
+      if (G.phase === 'idle') return G.turn === 'player';      // 主权回合（选牌 + 按钮）
       return false;
     }
 
@@ -1064,32 +1083,36 @@
       if (!G) return;
       if (G.phase === 'idle') {
         if (G.turn !== 'player') return;
-        G.phase = 'duelPick';
-        addLog('⏱ 时间到！自动发起决斗并随机出牌。');
-      } else if (G.phase === 'duelPick') {
-        addLog('⏱ 时间到！自动随机出牌。');
-      } else if (G.phase === 'swapPick') {
-        if (G.turn !== 'player') return;
-        addLog('⏱ 时间到！自动随机选牌换牌。');
-      } else {
+        // 已选牌则用选中的，否则随机选一张，自动发起决斗
+        var card = G.player.hand.find(function (c) { return c.id === G.selectedCardId; });
+        if (!card) card = G.player.hand[Math.floor(Math.random() * G.player.hand.length)];
+        G.selectedCardId = card.id;
+        addLog('⏱ 时间到！自动用「' + cardName(card) + '」发起决斗。');
+        onDuelClick();
         return;
       }
-      if (!G.player.hand.length) return;
-      var card = G.player.hand[Math.floor(Math.random() * G.player.hand.length)];
-      onCardClick(card.id);
+      if (G.phase === 'duelPick') {
+        // 迎战超时：自动随机出一张牌
+        addLog('⏱ 时间到！自动随机出牌迎战。');
+        var c2 = G.player.hand[Math.floor(Math.random() * G.player.hand.length)];
+        onCardClick(c2.id);
+        return;
+      }
     }
 
     /* ================= 浮层 ================= */
     // 规则正文（开场介绍与规则弹窗共用）
     var RULES_HTML =
+      '<div style="color:var(--gold);font-weight:800">☆重要更新☆</div>' +
+      '<div style="margin:4px 0 12px">操作逻辑变更。玩家回合时，先选牌，再选择决斗/换牌。</div>' +
       '<ul>' +
       '<li>双方各有 <b>7 点 HP</b>；全场共 <b>15 张牌</b>（单倍图案牌，<b>每种3张</b>；双倍图案牌，<b>每种2张</b>）。</li>' +
       '<li>开局随机一张牌放入<b>底牌区</b>，双方各分 7 张，互不可见；抛硬币决定先手。</li>' +
+      '<li><b>操作方式</b>：轮到你时，先点选一张手牌（金色高亮），再点下方「决斗」或「换牌」按钮执行；再点同一张牌可取消选中。电脑向你发起决斗时，点牌直接迎战。</li>' +
       '<li><b>决斗</b>：双方各出一张牌，按照 （单个/两个）石头 > （单个/两个）剪刀 > （单个/两个）布 > （单个/两个）石头...判定回合胜负。失败方损失 HP = <b>双方牌面图案数量之积</b>；同类牌为平局，均不损失 HP。出过的牌进入弃牌区（明牌）。</li>' +
-      '<li><b>换牌</b>：选一张自己的牌，与对手手牌中<b>随机</b>的一张交换（只能看到卡背）。</li>' +
+      '<li><b>换牌</b>：选一张自己的牌，与对手手牌中<b>随机</b>的一张交换（只能看到卡背）。不能连续两回合换牌。</li>' +
       '<li><b>最终回合</b>：双方都只剩一张牌且 HP＞0 时触发，决斗伤害<b>翻倍</b>，换牌只能与<b>底牌</b>交换。</li>' +
-      '<li><b>换牌限制</b>：不能连续两回合换牌——若上一回合发生了换牌（含最终回合与底牌交换），本回合双方都只能发起「决斗」。</li>' +
-      '<li><b>思考时间</b>：你的每个回合限时操作，倒计时从 <b>15 秒</b> 起逐回合递减 1 秒，最低 <b>10 秒</b>；重开游戏后重置。超时系统将自动随机完成当前操作。</li>' +
+      '<li><b>思考时间</b>：你的每个回合限时操作，倒计时从 <b>15 秒</b> 起逐回合减少。超时系统将自动随机完成当前操作。</li>' +
       '<li><b>胜利条件</b>：一回合结束后，任何一方 HP 归零即本轮游戏告负。</li>' +
       '</ul>';
 
